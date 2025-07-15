@@ -165,7 +165,7 @@ module.exports = function(app) {
       // Debug: Log incoming message
       app.debug(`📥 Received MQTT message on topic: ${topic}`);
       
-      // Find matching import rule
+      // Find matching import rule (that doesn't exclude this MMSI)
       const rule = importRules.find(r => {
         if (!r.enabled) return false;
         
@@ -177,6 +177,9 @@ module.exports = function(app) {
         // Debug: Log rule matching attempt
         app.debug(`🔍 Checking rule "${r.name}" with pattern: ${expectedTopic}`);
         
+        // First check if topic matches the pattern
+        let matches = false;
+        
         // Support wildcard matching with URN format flexibility
         if (expectedTopic.includes('#')) {
           const prefix = expectedTopic.replace('#', '');
@@ -186,13 +189,12 @@ module.exports = function(app) {
             const urnPrefix = prefix.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
             const underscoreUrn = urnToMqttFormat(selfVesselUrn);
             const underscorePrefix = underscoreUrn ? prefix.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
-            const matches = topic.startsWith(prefix) || topic.startsWith(urnPrefix) || 
-                           (underscorePrefix && topic.startsWith(underscorePrefix));
+            matches = topic.startsWith(prefix) || topic.startsWith(urnPrefix) || 
+                     (underscorePrefix && topic.startsWith(underscorePrefix));
             app.debug(`🔍 vessels/self matching: ${matches} (tried: ${prefix}, ${urnPrefix}, ${underscorePrefix})`);
-            return matches;
+          } else {
+            matches = topic.startsWith(prefix) || topic.startsWith(prefix.replace(/_/g, ':'));
           }
-          
-          return topic.startsWith(prefix) || topic.startsWith(prefix.replace(/_/g, ':'));
         } else if (expectedTopic.includes('+')) {
           // Handle vessels/self/* patterns
           if (expectedTopic.includes('vessels/self/') && selfVesselUrn) {
@@ -202,26 +204,35 @@ module.exports = function(app) {
             const selfRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
             const urnRegex = new RegExp(urnPattern.replace(/\+/g, '[^/]+'));
             const underscoreRegex = underscorePattern ? new RegExp(underscorePattern.replace(/\+/g, '[^/]+')) : null;
-            return selfRegex.test(topic) || urnRegex.test(topic) || 
-                   (underscoreRegex && underscoreRegex.test(topic));
+            matches = selfRegex.test(topic) || urnRegex.test(topic) || 
+                     (underscoreRegex && underscoreRegex.test(topic));
+          } else {
+            // Create regex patterns for both underscore and colon formats
+            const underscoreRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
+            const colonRegex = new RegExp(expectedTopic.replace(/_/g, ':').replace(/\+/g, '[^/]+'));
+            matches = underscoreRegex.test(topic) || colonRegex.test(topic);
           }
-          
-          // Create regex patterns for both underscore and colon formats
-          const underscoreRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
-          const colonRegex = new RegExp(expectedTopic.replace(/_/g, ':').replace(/\+/g, '[^/]+'));
-          return underscoreRegex.test(topic) || colonRegex.test(topic);
         } else {
           // Handle vessels/self/* patterns
           if (expectedTopic.includes('vessels/self/') && selfVesselUrn) {
             const urnTopic = expectedTopic.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
             const underscoreUrn = urnToMqttFormat(selfVesselUrn);
             const underscoreTopic = underscoreUrn ? expectedTopic.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
-            return topic === expectedTopic || topic === urnTopic || 
-                   (underscoreTopic && topic === underscoreTopic);
+            matches = topic === expectedTopic || topic === urnTopic || 
+                     (underscoreTopic && topic === underscoreTopic);
+          } else {
+            matches = topic === expectedTopic || topic === expectedTopic.replace(/_/g, ':');
           }
-          
-          return topic === expectedTopic || topic === expectedTopic.replace(/_/g, ':');
         }
+        
+        // If topic matches, check if MMSI should be excluded
+        if (matches && isMMSIExcluded(topic, r)) {
+          const mmsi = extractMMSIFromUrn(topic.split('/')[1]);
+          app.debug(`🔍 Rule "${r.name}" matches but MMSI ${mmsi} is excluded - continuing search`);
+          return false; // Continue looking for other rules
+        }
+        
+        return matches;
       });
 
       if (!rule) {
@@ -230,13 +241,6 @@ module.exports = function(app) {
       }
       
       app.debug(`✅ Rule matched: "${rule.name}" for topic: ${topic}`);
-
-      // Check if MMSI should be excluded
-      if (isMMSIExcluded(topic, rule)) {
-        const mmsi = extractMMSIFromUrn(topic.split('/')[1]);
-        app.debug(`MMSI ${mmsi} excluded by rule "${rule.name}" for topic: ${topic}`);
-        return;
-      }
 
       // Check for duplicate messages if enabled
       if (rule.ignoreDuplicates) {
