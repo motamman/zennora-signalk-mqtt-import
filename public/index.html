@@ -320,6 +320,7 @@
                         <th>Source Label</th>
                         <th>Payload Format</th>
                         <th>Ignore Duplicates</th>
+                        <th>Exclude MMSI</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -391,6 +392,12 @@
                         <input type="checkbox" id="ruleIgnoreDuplicates" name="ignoreDuplicates" checked>
                         Ignore Duplicate Messages
                     </label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ruleExcludeMMSI">Exclude MMSI Numbers:</label>
+                    <input type="text" id="ruleExcludeMMSI" name="excludeMMSI" placeholder="e.g., 123456789, 987654321">
+                    <small>Comma-separated list of MMSI numbers to exclude from this rule</small>
                 </div>
                 
                 <div>
@@ -478,6 +485,7 @@
                     <td><span class="tag tag-source">${rule.sourceLabel}</span></td>
                     <td><span class="tag">${rule.payloadFormat}</span></td>
                     <td><span class="tag ${rule.ignoreDuplicates ? 'tag-enabled' : 'tag-disabled'}">${rule.ignoreDuplicates ? 'Yes' : 'No'}</span></td>
+                    <td><span class="tag tag-topic">${rule.excludeMMSI || 'None'}</span></td>
                     <td>
                         <button class="btn" onclick="editRule(${index})">✏️ Edit</button>
                         <button class="btn btn-danger" onclick="deleteRule(${index})">🗑️ Delete</button>
@@ -518,6 +526,7 @@
             document.getElementById('rulePayloadFormat').value = rule.payloadFormat || 'full';
             document.getElementById('ruleEnabled').checked = rule.enabled;
             document.getElementById('ruleIgnoreDuplicates').checked = rule.ignoreDuplicates !== false;
+            document.getElementById('ruleExcludeMMSI').value = rule.excludeMMSI || '';
             
             document.getElementById('ruleModal').style.display = 'block';
         }
@@ -550,7 +559,8 @@
                 sourceLabel: formData.get('sourceLabel'),
                 payloadFormat: formData.get('payloadFormat'),
                 enabled: document.getElementById('ruleEnabled').checked,
-                ignoreDuplicates: document.getElementById('ruleIgnoreDuplicates').checked
+                ignoreDuplicates: document.getElementById('ruleIgnoreDuplicates').checked,
+                excludeMMSI: formData.get('excludeMMSI')
             };
             
             if (editingRuleIndex >= 0) {
