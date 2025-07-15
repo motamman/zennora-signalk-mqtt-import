@@ -220,6 +220,13 @@ module.exports = function(app) {
         return;
       }
 
+      // Check if MMSI should be excluded
+      if (isMMSIExcluded(topic, rule)) {
+        const mmsi = extractMMSIFromUrn(topic.split('/')[1]);
+        app.debug(`MMSI ${mmsi} excluded by rule "${rule.name}" for topic: ${topic}`);
+        return;
+      }
+
       // Check for duplicate messages if enabled
       if (rule.ignoreDuplicates) {
         const messageKey = `${topic}:${messageStr}`;
@@ -338,6 +345,37 @@ module.exports = function(app) {
     return mqttFormat.replace(/_/g, ':');
   }
 
+  // Helper function to extract MMSI from URN
+  function extractMMSIFromUrn(urn) {
+    if (!urn) return null;
+    // Extract MMSI from urn:mrn:imo:mmsi:368396230 or urn_mrn_imo_mmsi_368396230
+    const match = urn.match(/urn[_:]+mrn[_:]+imo[_:]+mmsi[_:]+([0-9]+)/);
+    return match ? match[1] : null;
+  }
+
+  // Helper function to parse MMSI exclusion list
+  function parseMMSIExclusionList(excludeMMSI) {
+    if (!excludeMMSI || typeof excludeMMSI !== 'string') return [];
+    return excludeMMSI.split(',').map(mmsi => mmsi.trim()).filter(mmsi => mmsi.length > 0);
+  }
+
+  // Helper function to check if MMSI should be excluded
+  function isMMSIExcluded(topic, rule) {
+    const exclusionList = parseMMSIExclusionList(rule.excludeMMSI);
+    if (exclusionList.length === 0) return false;
+    
+    // Extract vessel ID from topic
+    const parts = topic.split('/');
+    if (parts.length < 2 || parts[0] !== 'vessels') return false;
+    
+    const vesselId = parts[1];
+    const mmsi = extractMMSIFromUrn(vesselId);
+    
+    if (!mmsi) return false;
+    
+    return exclusionList.includes(mmsi);
+  }
+
   // Extract SignalK context from MQTT topic
   function extractContextFromTopic(topic, rule) {
     // Remove prefix if present
@@ -433,7 +471,8 @@ module.exports = function(app) {
         sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
-        ignoreDuplicates: true
+        ignoreDuplicates: true,
+        excludeMMSI: ''
       },
       {
         id: 'vessels-navigation',
@@ -444,7 +483,8 @@ module.exports = function(app) {
         sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
-        ignoreDuplicates: true
+        ignoreDuplicates: true,
+        excludeMMSI: ''
       },
       {
         id: 'vessels-environment',
@@ -455,7 +495,8 @@ module.exports = function(app) {
         sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
-        ignoreDuplicates: true
+        ignoreDuplicates: true,
+        excludeMMSI: ''
       },
       {
         id: 'vessels-electrical',
@@ -683,6 +724,12 @@ module.exports = function(app) {
               title: 'Ignore Duplicates',
               description: 'Skip duplicate messages (reduces SignalK updates)',
               default: true
+            },
+            excludeMMSI: {
+              type: 'string',
+              title: 'Exclude MMSI Numbers',
+              description: 'Comma-separated list of MMSI numbers to exclude (e.g., 123456789, 987654321)',
+              default: ''
             }
           }
         }
