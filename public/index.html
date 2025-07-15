@@ -368,7 +368,7 @@
                 
                 <div class="form-group">
                     <label for="ruleSourceLabel">Source Label:</label>
-                    <input type="text" id="ruleSourceLabel" name="sourceLabel" value="mqtt-import" placeholder="e.g., mqtt-import, remote-sensor">
+                    <input type="text" id="ruleSourceLabel" name="sourceLabel" placeholder="e.g., mqtt-import, remote-sensor (leave blank for default)">
                 </div>
                 
                 <div class="form-group">
@@ -500,7 +500,7 @@
             document.getElementById('ruleForm').reset();
             document.getElementById('ruleEnabled').checked = true;
             document.getElementById('ruleIgnoreDuplicates').checked = true;
-            document.getElementById('ruleSourceLabel').value = 'mqtt-import';
+            document.getElementById('ruleSourceLabel').value = '';
             document.getElementById('ruleModal').style.display = 'block';
         }
 
@@ -514,7 +514,7 @@
             document.getElementById('ruleMqttTopic').value = rule.mqttTopic;
             document.getElementById('ruleSignalKContext').value = rule.signalKContext || '';
             document.getElementById('ruleSignalKPath').value = rule.signalKPath || '';
-            document.getElementById('ruleSourceLabel').value = rule.sourceLabel || 'mqtt-import';
+            document.getElementById('ruleSourceLabel').value = rule.sourceLabel || '';
             document.getElementById('rulePayloadFormat').value = rule.payloadFormat || 'full';
             document.getElementById('ruleEnabled').checked = rule.enabled;
             document.getElementById('ruleIgnoreDuplicates').checked = rule.ignoreDuplicates !== false;
