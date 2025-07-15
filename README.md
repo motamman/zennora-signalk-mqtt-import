@@ -11,7 +11,7 @@ A comprehensive SignalK plugin that provides a web-based interface for managing 
 - **🎯 Selective Import**: Import only the data you need with flexible topic filtering
 - **📊 Real-time Status**: Monitor MQTT connection and message statistics
 - **🔄 Dynamic Updates**: Changes take effect immediately without restart
-- **💾 Persistent Configuration**: Rules are saved to SignalK configuration and survive restarts
+- **💾 Persistent Configuration**: Rules are saved to dedicated storage and survive restarts
 - **🏷️ Flexible Topic Mapping**: Support for MQTT topic wildcards and auto-extraction of SignalK paths
 - **📦 Multiple Formats**: Support for full SignalK structure or value-only payloads
 - **🔍 Duplicate Filtering**: Optionally ignore duplicate messages to reduce SignalK updates
@@ -28,14 +28,19 @@ sudo systemctl restart signalk
 
 ## Configuration
 
-Navigate to **SignalK Admin → Server → Plugin Config → Zennora MQTT Import Manager**
+### Plugin Settings
 
-### Basic Settings
+Navigate to **SignalK Admin → Server → Plugin Config → Zennora MQTT Import Manager** for basic MQTT connection settings:
+
 - **Enable MQTT Import**: Master enable/disable switch
 - **MQTT Broker URL**: Connection string (e.g., `mqtt://localhost:1883`)
 - **Client ID**: Unique identifier for the MQTT connection
 - **Username/Password**: Optional authentication credentials
 - **Topic Prefix**: Optional prefix for all MQTT topics
+
+### Import Rules Management
+
+**All import rules are managed through the web interface only.** This eliminates configuration conflicts and provides a better user experience.
 
 ## Web Interface
 
@@ -55,7 +60,7 @@ Access the management interface at:
 - **Edit Rule**: Modify existing rules
 - **Enable/Disable**: Toggle rules on/off
 - **Delete Rule**: Remove unwanted rules
-- **Save Changes**: Apply changes to active configuration
+- **Save Changes**: Apply changes and save to persistent storage
 
 #### Rule Configuration Options
 - **Name**: Descriptive name for the rule
@@ -203,13 +208,15 @@ Or simple values:
 
 ## Default Import Rules
 
-The plugin comes with practical rules for common marine data import:
+The plugin comes with practical rules for common marine data import (configured via web interface):
 
 1. **Self Navigation Data** - `vessels/urn_mrn_imo_mmsi_+/navigation/+` (auto-detects self vessel)
 2. **Self Electrical Data** - `vessels/urn_mrn_imo_mmsi_+/electrical/+` (auto-detects self vessel)
 3. **Self Propulsion Data** - `vessels/urn_mrn_imo_mmsi_+/propulsion/+` (auto-detects self vessel)
 4. **Self Environment Data** - `vessels/urn_mrn_imo_mmsi_+/environment/+` (auto-detects self vessel)
 5. **AIS Vessels (All)** - `vessels/urn_mrn_imo_mmsi_+/+` (disabled by default)
+
+**Note**: These rules are created automatically on first startup and can be modified through the web interface.
 
 ## Integration with Export Plugin
 

@@ -8,6 +8,7 @@ module.exports = function(app) {
   let importRules = []; // Store import rules
   let lastReceivedMessages = new Map(); // Track received messages for deduplication
   let selfVesselUrn = null; // Store the self vessel's URN
+  let rulesFilePath = null; // Path to persistent rules file
 
   plugin.id = 'zennora-signalk-mqtt-import';
   plugin.name = 'Zennora MQTT Import Manager';
@@ -22,12 +23,16 @@ module.exports = function(app) {
       mqttUsername: options?.mqttUsername || '',
       mqttPassword: options?.mqttPassword || '',
       topicPrefix: options?.topicPrefix || '',
-      enabled: options?.enabled || true,
-      importRules: options?.importRules || getDefaultImportRules()
+      enabled: options?.enabled || true
     };
 
     plugin.config = config;
-    importRules = config.importRules;
+    
+    // Load rules from persistent storage (or migrate from old config)
+    const migratedRules = migrateOldConfiguration(options);
+    importRules = migratedRules || loadRulesFromStorage();
+    
+    app.debug(`Loaded ${importRules.length} import rules from persistent storage`);
 
     // Get self vessel URN for proper context mapping
     try {
@@ -589,20 +594,16 @@ module.exports = function(app) {
         }
 
         importRules = newRules;
-        plugin.config.importRules = newRules;
         
-        // Save configuration to persistent storage
-        app.savePluginOptions(plugin.config, (err) => {
-          if (err) {
-            app.debug('Error saving plugin configuration:', err);
-            return res.status(500).json({ success: false, error: 'Failed to save configuration' });
-          }
-          
+        // Save rules to persistent storage
+        if (saveRulesToStorage(newRules)) {
           // Update MQTT subscriptions with new rules
           updateMQTTSubscriptions();
           
-          res.json({ success: true, message: 'Import rules updated and saved' });
-        });
+          res.json({ success: true, message: 'Import rules updated and saved to persistent storage' });
+        } else {
+          res.status(500).json({ success: false, error: 'Failed to save rules to persistent storage' });
+        }
       } catch (error) {
         res.status(500).json({ success: false, error: error.message });
       }
@@ -697,74 +698,52 @@ module.exports = function(app) {
         description: 'Optional prefix for all MQTT topics',
         default: ''
       },
-      importRules: {
-        type: 'array',
-        title: 'Import Rules',
-        description: 'Rules defining which MQTT data to import into SignalK',
-        items: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              title: 'Rule ID'
-            },
-            name: {
-              type: 'string',
-              title: 'Rule Name'
-            },
-            mqttTopic: {
-              type: 'string',
-              title: 'MQTT Topic',
-              description: 'MQTT topic to subscribe to (supports + and # wildcards)'
-            },
-            signalKContext: {
-              type: 'string',
-              title: 'SignalK Context',
-              description: 'vessels.self, vessels.urn:mrn:imo:mmsi:123456, etc. (leave empty to auto-detect from topic)',
-              default: ''
-            },
-            signalKPath: {
-              type: 'string',
-              title: 'SignalK Path',
-              description: 'navigation.position, electrical.batteries.house.voltage, etc. (leave empty to extract from topic)',
-              default: ''
-            },
-            sourceLabel: {
-              type: 'string',
-              title: 'Source Label',
-              description: 'Label to use for the data source in SignalK (optional)',
-              default: ''
-            },
-            enabled: {
-              type: 'boolean',
-              title: 'Enabled',
-              default: true
-            },
-            payloadFormat: {
-              type: 'string',
-              title: 'Payload Format',
-              description: 'Expected format of the MQTT payload',
-              enum: ['full', 'value-only'],
-              enumNames: ['Full SignalK Structure', 'Value Only'],
-              default: 'full'
-            },
-            ignoreDuplicates: {
-              type: 'boolean',
-              title: 'Ignore Duplicates',
-              description: 'Skip duplicate messages (reduces SignalK updates)',
-              default: true
-            },
-            excludeMMSI: {
-              type: 'string',
-              title: 'Exclude MMSI Numbers',
-              description: 'Comma-separated list of MMSI numbers to exclude (e.g., 123456789, 987654321)',
-              default: ''
-            }
-          }
-        }
-      }
     }
   };
+
+  // Persistent storage functions
+  function getRulesFilePath() {
+    if (!rulesFilePath) {
+      const dataDir = app.getDataDirPath();
+      rulesFilePath = path.join(dataDir, 'mqtt-import-rules.json');
+    }
+    return rulesFilePath;
+  }
+
+  function loadRulesFromStorage() {
+    try {
+      const filePath = getRulesFilePath();
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(data);
+      }
+    } catch (error) {
+      app.debug(`Error loading rules from storage: ${error.message}`);
+    }
+    return getDefaultImportRules();
+  }
+
+  function saveRulesToStorage(rules) {
+    try {
+      const filePath = getRulesFilePath();
+      fs.writeFileSync(filePath, JSON.stringify(rules, null, 2));
+      app.debug(`Rules saved to: ${filePath}`);
+      return true;
+    } catch (error) {
+      app.debug(`Error saving rules to storage: ${error.message}`);
+      return false;
+    }
+  }
+
+  function migrateOldConfiguration(options) {
+    // Migrate rules from old plugin config if they exist
+    if (options.importRules && Array.isArray(options.importRules)) {
+      app.debug('Migrating import rules from plugin configuration to persistent storage');
+      saveRulesToStorage(options.importRules);
+      return options.importRules;
+    }
+    return null;
+  }
 
   return plugin;
 };
