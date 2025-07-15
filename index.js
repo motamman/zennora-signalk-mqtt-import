@@ -120,10 +120,25 @@ module.exports = function(app) {
         topic = `${plugin.config.topicPrefix}/${topic}`;
       }
       
-      // Add both underscore and colon formats for URN topics
-      topics.add(topic);
-      if (topic.includes('urn_mrn_imo_mmsi_')) {
-        topics.add(topic.replace(/urn_mrn_imo_mmsi_/g, 'urn:mrn:imo:mmsi:'));
+      // Handle vessels/self/* topics by converting to actual URN format
+      if (topic.includes('vessels/self/') && selfVesselUrn) {
+        // Convert vessels/self/* to actual URN format for MQTT subscription
+        const urnTopic = topic.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
+        topics.add(urnTopic);
+        app.debug(`Converted vessels/self rule to URN topic: ${urnTopic}`);
+        // Also add underscore format if URN contains colons
+        if (selfVesselUrn.includes(':')) {
+          const underscoreUrn = urnToMqttFormat(selfVesselUrn);
+          const underscoreTopic = topic.replace('vessels/self/', `vessels/${underscoreUrn}/`);
+          topics.add(underscoreTopic);
+          app.debug(`Also added underscore format: ${underscoreTopic}`);
+        }
+      } else {
+        // Add both underscore and colon formats for URN topics
+        topics.add(topic);
+        if (topic.includes('urn_mrn_imo_mmsi_')) {
+          topics.add(topic.replace(/urn_mrn_imo_mmsi_/g, 'urn:mrn:imo:mmsi:'));
+        }
       }
     });
 
@@ -158,13 +173,44 @@ module.exports = function(app) {
         // Support wildcard matching with URN format flexibility
         if (expectedTopic.includes('#')) {
           const prefix = expectedTopic.replace('#', '');
+          
+          // Handle vessels/self/* patterns
+          if (prefix.includes('vessels/self/') && selfVesselUrn) {
+            const urnPrefix = prefix.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
+            const underscoreUrn = urnToMqttFormat(selfVesselUrn);
+            const underscorePrefix = underscoreUrn ? prefix.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
+            return topic.startsWith(prefix) || topic.startsWith(urnPrefix) || 
+                   (underscorePrefix && topic.startsWith(underscorePrefix));
+          }
+          
           return topic.startsWith(prefix) || topic.startsWith(prefix.replace(/_/g, ':'));
         } else if (expectedTopic.includes('+')) {
+          // Handle vessels/self/* patterns
+          if (expectedTopic.includes('vessels/self/') && selfVesselUrn) {
+            const urnPattern = expectedTopic.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
+            const underscoreUrn = urnToMqttFormat(selfVesselUrn);
+            const underscorePattern = underscoreUrn ? expectedTopic.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
+            const selfRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
+            const urnRegex = new RegExp(urnPattern.replace(/\+/g, '[^/]+'));
+            const underscoreRegex = underscorePattern ? new RegExp(underscorePattern.replace(/\+/g, '[^/]+')) : null;
+            return selfRegex.test(topic) || urnRegex.test(topic) || 
+                   (underscoreRegex && underscoreRegex.test(topic));
+          }
+          
           // Create regex patterns for both underscore and colon formats
           const underscoreRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
           const colonRegex = new RegExp(expectedTopic.replace(/_/g, ':').replace(/\+/g, '[^/]+'));
           return underscoreRegex.test(topic) || colonRegex.test(topic);
         } else {
+          // Handle vessels/self/* patterns
+          if (expectedTopic.includes('vessels/self/') && selfVesselUrn) {
+            const urnTopic = expectedTopic.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
+            const underscoreUrn = urnToMqttFormat(selfVesselUrn);
+            const underscoreTopic = underscoreUrn ? expectedTopic.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
+            return topic === expectedTopic || topic === urnTopic || 
+                   (underscoreTopic && topic === underscoreTopic);
+          }
+          
           return topic === expectedTopic || topic === expectedTopic.replace(/_/g, ':');
         }
       });
