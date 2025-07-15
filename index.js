@@ -166,7 +166,8 @@ module.exports = function(app) {
       app.debug(`📥 Received MQTT message on topic: ${topic}`);
       
       // Find matching import rule (that doesn't exclude this MMSI)
-      const rule = importRules.find(r => {
+      let rule = null;
+      for (const r of importRules) {
         if (!r.enabled) return false;
         
         let expectedTopic = r.mqttTopic;
@@ -232,8 +233,12 @@ module.exports = function(app) {
           return false; // Continue looking for other rules
         }
         
-        return matches;
-      });
+        // If this rule matches and doesn't exclude, use it
+        if (matches) {
+          rule = r;
+          break;
+        }
+      }
 
       if (!rule) {
         app.debug(`❌ No import rule found for topic: ${topic}`);
@@ -391,7 +396,13 @@ module.exports = function(app) {
     
     if (!mmsi) return false;
     
-    return exclusionList.includes(mmsi);
+    const isExcluded = exclusionList.includes(mmsi);
+    
+    if (isExcluded) {
+      app.debug(`MMSI ${mmsi} excluded by rule "${rule.name}" for topic: ${topic}`);
+    }
+    
+    return isExcluded;
   }
 
   // Extract SignalK context from MQTT topic
