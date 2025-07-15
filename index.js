@@ -7,6 +7,7 @@ module.exports = function(app) {
   let mqttClient = null;
   let importRules = []; // Store import rules
   let lastReceivedMessages = new Map(); // Track received messages for deduplication
+  let selfVesselUrn = null; // Store the self vessel's URN
 
   plugin.id = 'zennora-signalk-mqtt-import';
   plugin.name = 'Zennora MQTT Import Manager';
@@ -27,6 +28,14 @@ module.exports = function(app) {
 
     plugin.config = config;
     importRules = config.importRules;
+
+    // Get self vessel URN for proper context mapping
+    try {
+      selfVesselUrn = app.selfId || app.getSelfPath('uuid');
+      app.debug(`Self vessel URN: ${selfVesselUrn}`);
+    } catch (error) {
+      app.debug(`Warning: Could not get self vessel URN: ${error.message}`);
+    }
 
     if (!config.enabled) {
       app.debug('MQTT Import plugin disabled');
@@ -206,7 +215,7 @@ module.exports = function(app) {
       }
 
       // Extract context and path from topic or rule configuration
-      const context = rule.signalKContext || 'vessels.self';
+      const context = rule.signalKContext || extractContextFromTopic(topic, rule);
       const path = rule.signalKPath || extractPathFromTopic(topic, rule);
 
       return {
@@ -240,7 +249,7 @@ module.exports = function(app) {
       }
       
       // Otherwise, try to construct a SignalK delta
-      const context = rule.signalKContext || parsed.context || 'vessels.self';
+      const context = rule.signalKContext || parsed.context || extractContextFromTopic(topic, rule);
       const path = rule.signalKPath || extractPathFromTopic(topic, rule);
       
       return {
@@ -261,6 +270,51 @@ module.exports = function(app) {
       app.debug(`Error parsing full SignalK message: ${error.message}`);
       return null;
     }
+  }
+
+  // Helper function to convert URN format for MQTT topics
+  function urnToMqttFormat(urn) {
+    if (!urn) return null;
+    // Convert urn:mrn:imo:mmsi:368396230 to urn_mrn_imo_mmsi_368396230
+    return urn.replace(/:/g, '_');
+  }
+
+  // Helper function to convert MQTT format back to URN
+  function mqttFormatToUrn(mqttFormat) {
+    if (!mqttFormat) return null;
+    // Convert urn_mrn_imo_mmsi_368396230 to urn:mrn:imo:mmsi:368396230
+    return mqttFormat.replace(/_/g, ':');
+  }
+
+  // Extract SignalK context from MQTT topic
+  function extractContextFromTopic(topic, rule) {
+    // Remove prefix if present
+    let cleanTopic = topic;
+    if (plugin.config.topicPrefix) {
+      cleanTopic = cleanTopic.replace(`${plugin.config.topicPrefix}/`, '');
+    }
+
+    const parts = cleanTopic.split('/');
+    
+    if (parts[0] === 'vessels' && parts.length > 2) {
+      const vesselId = parts[1];
+      
+      // Check if this is the self vessel's URN in MQTT format
+      if (selfVesselUrn && urnToMqttFormat(selfVesselUrn) === vesselId) {
+        return 'vessels.self';
+      }
+      
+      // Convert MQTT format back to proper URN format
+      if (vesselId.startsWith('urn_')) {
+        return `vessels.${mqttFormatToUrn(vesselId)}`;
+      }
+      
+      // Handle other formats
+      return `vessels.${vesselId}`;
+    }
+    
+    // Fallback to vessels.self
+    return 'vessels.self';
   }
 
   // Extract SignalK path from MQTT topic
@@ -317,10 +371,43 @@ module.exports = function(app) {
   function getDefaultImportRules() {
     return [
       {
-        id: 'all-navigation',
-        name: 'All Navigation Data',
-        mqttTopic: 'vessels/self/navigation/+',
-        signalKContext: 'vessels.self',
+        id: 'self-navigation',
+        name: 'Self Navigation Data',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/navigation/+',
+        signalKContext: '', // Will be extracted from topic (auto-detect self)
+        signalKPath: '', // Will be extracted from topic
+        sourceLabel: 'mqtt-import',
+        enabled: true,
+        payloadFormat: 'full',
+        ignoreDuplicates: true
+      },
+      {
+        id: 'self-electrical',
+        name: 'Self Electrical Data',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/electrical/+',
+        signalKContext: '', // Will be extracted from topic (auto-detect self)
+        signalKPath: '', // Will be extracted from topic
+        sourceLabel: 'mqtt-import',
+        enabled: true,
+        payloadFormat: 'full',
+        ignoreDuplicates: true
+      },
+      {
+        id: 'self-propulsion',
+        name: 'Self Propulsion Data',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/propulsion/+',
+        signalKContext: '', // Will be extracted from topic (auto-detect self)
+        signalKPath: '', // Will be extracted from topic
+        sourceLabel: 'mqtt-import',
+        enabled: true,
+        payloadFormat: 'full',
+        ignoreDuplicates: true
+      },
+      {
+        id: 'self-environment',
+        name: 'Self Environment Data',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/environment/+',
+        signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
         sourceLabel: 'mqtt-import',
         enabled: true,
@@ -329,45 +416,12 @@ module.exports = function(app) {
       },
       {
         id: 'all-vessels-ais',
-        name: 'AIS Vessels',
+        name: 'AIS Vessels (All)',
         mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/+',
         signalKContext: '', // Will be extracted from topic
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
-        enabled: true,
-        payloadFormat: 'full',
-        ignoreDuplicates: true
-      },
-      {
-        id: 'electrical-batteries',
-        name: 'Electrical Batteries',
-        mqttTopic: 'vessels/self/electrical/batteries/+',
-        signalKContext: 'vessels.self',
-        signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
-        enabled: true,
-        payloadFormat: 'full',
-        ignoreDuplicates: true
-      },
-      {
-        id: 'propulsion',
-        name: 'Propulsion Data',
-        mqttTopic: 'vessels/self/propulsion/+',
-        signalKContext: 'vessels.self',
-        signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
-        enabled: true,
-        payloadFormat: 'full',
-        ignoreDuplicates: true
-      },
-      {
-        id: 'environment',
-        name: 'Environment Data',
-        mqttTopic: 'vessels/self/environment/+',
-        signalKContext: 'vessels.self',
-        signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
-        enabled: true,
+        sourceLabel: 'ais-import',
+        enabled: false, // Disabled by default to avoid too much AIS data
         payloadFormat: 'full',
         ignoreDuplicates: true
       }
@@ -542,8 +596,8 @@ module.exports = function(app) {
             signalKContext: {
               type: 'string',
               title: 'SignalK Context',
-              description: 'vessels.self, vessels.urn:mmsi:123456, etc. (leave empty to extract from topic)',
-              default: 'vessels.self'
+              description: 'vessels.self, vessels.urn:mrn:imo:mmsi:123456, etc. (leave empty to auto-detect from topic)',
+              default: ''
             },
             signalKPath: {
               type: 'string',
