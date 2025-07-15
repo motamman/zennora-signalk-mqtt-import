@@ -120,7 +120,11 @@ module.exports = function(app) {
         topic = `${plugin.config.topicPrefix}/${topic}`;
       }
       
+      // Add both underscore and colon formats for URN topics
       topics.add(topic);
+      if (topic.includes('urn_mrn_imo_mmsi_')) {
+        topics.add(topic.replace(/urn_mrn_imo_mmsi_/g, 'urn:mrn:imo:mmsi:'));
+      }
     });
 
     // Subscribe to all topics
@@ -151,15 +155,17 @@ module.exports = function(app) {
           expectedTopic = `${plugin.config.topicPrefix}/${expectedTopic}`;
         }
         
-        // Support wildcard matching
+        // Support wildcard matching with URN format flexibility
         if (expectedTopic.includes('#')) {
           const prefix = expectedTopic.replace('#', '');
-          return topic.startsWith(prefix);
+          return topic.startsWith(prefix) || topic.startsWith(prefix.replace(/_/g, ':'));
         } else if (expectedTopic.includes('+')) {
-          const regex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
-          return regex.test(topic);
+          // Create regex patterns for both underscore and colon formats
+          const underscoreRegex = new RegExp(expectedTopic.replace(/\+/g, '[^/]+'));
+          const colonRegex = new RegExp(expectedTopic.replace(/_/g, ':').replace(/\+/g, '[^/]+'));
+          return underscoreRegex.test(topic) || colonRegex.test(topic);
         } else {
-          return topic === expectedTopic;
+          return topic === expectedTopic || topic === expectedTopic.replace(/_/g, ':');
         }
       });
 
@@ -222,7 +228,7 @@ module.exports = function(app) {
         context: context,
         updates: [{
           source: {
-            label: rule.sourceLabel || 'mqtt-import',
+            label: rule.sourceLabel || '',
             type: 'mqtt'
           },
           timestamp: new Date().toISOString(),
@@ -256,7 +262,7 @@ module.exports = function(app) {
         context: context,
         updates: [{
           source: {
-            label: rule.sourceLabel || 'mqtt-import',
+            label: rule.sourceLabel || '',
             type: 'mqtt'
           },
           timestamp: new Date().toISOString(),
@@ -299,14 +305,16 @@ module.exports = function(app) {
     if (parts[0] === 'vessels' && parts.length > 2) {
       const vesselId = parts[1];
       
-      // Check if this is the self vessel's URN in MQTT format
-      if (selfVesselUrn && urnToMqttFormat(selfVesselUrn) === vesselId) {
+      // Check if this is the self vessel's URN (handle both formats)
+      if (selfVesselUrn && (urnToMqttFormat(selfVesselUrn) === vesselId || selfVesselUrn === vesselId)) {
         return 'vessels.self';
       }
       
-      // Convert MQTT format back to proper URN format
+      // Handle URN format (both underscore and colon)
       if (vesselId.startsWith('urn_')) {
         return `vessels.${mqttFormatToUrn(vesselId)}`;
+      } else if (vesselId.startsWith('urn:')) {
+        return `vessels.${vesselId}`;
       }
       
       // Handle other formats
@@ -371,57 +379,57 @@ module.exports = function(app) {
   function getDefaultImportRules() {
     return [
       {
-        id: 'self-navigation',
-        name: 'Self Navigation Data',
-        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/navigation/+',
+        id: 'vessels-all-data',
+        name: 'All Vessel Data (Auto-detect Self)',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/#',
         signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
+        sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
         ignoreDuplicates: true
       },
       {
-        id: 'self-electrical',
-        name: 'Self Electrical Data',
-        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/electrical/+',
+        id: 'vessels-navigation',
+        name: 'Navigation Data (All Vessels)',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/navigation/#',
         signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
+        sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
         ignoreDuplicates: true
       },
       {
-        id: 'self-propulsion',
-        name: 'Self Propulsion Data',
-        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/propulsion/+',
+        id: 'vessels-environment',
+        name: 'Environment Data (All Vessels)',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/environment/#',
         signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
+        sourceLabel: '',
         enabled: true,
         payloadFormat: 'full',
         ignoreDuplicates: true
       },
       {
-        id: 'self-environment',
-        name: 'Self Environment Data',
-        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/environment/+',
+        id: 'vessels-electrical',
+        name: 'Electrical Data (All Vessels)',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/electrical/#',
         signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'mqtt-import',
-        enabled: true,
+        sourceLabel: '',
+        enabled: false, // Disabled by default
         payloadFormat: 'full',
         ignoreDuplicates: true
       },
       {
-        id: 'all-vessels-ais',
-        name: 'AIS Vessels (All)',
-        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/+',
-        signalKContext: '', // Will be extracted from topic
+        id: 'vessels-propulsion',
+        name: 'Propulsion Data (All Vessels)',
+        mqttTopic: 'vessels/urn_mrn_imo_mmsi_+/propulsion/#',
+        signalKContext: '', // Will be extracted from topic (auto-detect self)
         signalKPath: '', // Will be extracted from topic
-        sourceLabel: 'ais-import',
-        enabled: false, // Disabled by default to avoid too much AIS data
+        sourceLabel: '',
+        enabled: false, // Disabled by default
         payloadFormat: 'full',
         ignoreDuplicates: true
       }
@@ -608,8 +616,8 @@ module.exports = function(app) {
             sourceLabel: {
               type: 'string',
               title: 'Source Label',
-              description: 'Label to use for the data source in SignalK',
-              default: 'mqtt-import'
+              description: 'Label to use for the data source in SignalK (optional)',
+              default: ''
             },
             enabled: {
               type: 'boolean',
