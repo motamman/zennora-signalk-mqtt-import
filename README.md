@@ -65,6 +65,7 @@ Access the management interface at:
 - **Source Label**: Label to use for the data source in SignalK
 - **Payload Format**: Expected format of MQTT messages (full SignalK or value-only)
 - **Ignore Duplicates**: Skip duplicate messages to reduce SignalK updates
+- **Exclude MMSI**: Comma-separated list of MMSI numbers to exclude from this rule
 
 ## MQTT Topic Mapping
 
@@ -119,6 +120,46 @@ The plugin automatically handles the mapping between MQTT topics using actual ve
 - **Flexible**: Handles both self and external vessel data
 - **Standards Compliant**: Proper SignalK context mapping
 - **AIS Integration**: Seamless handling of AIS data from multiple vessels
+
+## MMSI Exclusion
+
+The plugin supports excluding specific vessels by their MMSI numbers from import rules. This is useful for filtering out unwanted AIS data or avoiding conflicts with local vessel data.
+
+### How It Works
+
+1. **MMSI Extraction**: The plugin automatically extracts MMSI numbers from URN format in MQTT topics
+2. **Exclusion Check**: Each message is checked against the rule's exclusion list before processing
+3. **Flexible Format**: Supports both colon (`urn:mrn:imo:mmsi:368396230`) and underscore (`urn_mrn_imo_mmsi_368396230`) formats
+
+### Configuration
+
+In the **Exclude MMSI** field, enter a comma-separated list of MMSI numbers:
+```
+123456789, 987654321, 555444333
+```
+
+### Use Cases
+
+- **Filter AIS Data**: Exclude specific vessels from AIS import to reduce data volume
+- **Avoid Conflicts**: Exclude your own vessel's MMSI when importing from external sources
+- **Data Quality**: Exclude vessels with known bad or duplicate data
+- **Testing**: Exclude test vessels or simulators from production data
+
+### Example Scenarios
+
+**Scenario 1: Exclude Own Vessel from AIS**
+```
+Rule: AIS Import
+Topic: vessels/urn_mrn_imo_mmsi_+/navigation/#
+Exclude MMSI: 368396230
+```
+
+**Scenario 2: Multiple Vessel Exclusion**
+```
+Rule: Regional AIS Data
+Topic: vessels/urn_mrn_imo_mmsi_+/+
+Exclude MMSI: 123456789, 987654321, 555444333
+```
 
 ## Payload Formats
 
@@ -213,6 +254,17 @@ SignalK Context: vessels.self
 SignalK Path: environment.inside.temperature
 Source Label: mqtt-sensor
 Payload Format: value-only
+```
+
+### Example 4: Import with MMSI Exclusion
+```
+Rule Name: AIS Data (Exclude Specific Vessels)
+MQTT Topic: vessels/urn_mrn_imo_mmsi_+/navigation/#
+SignalK Context: (auto-extracted)
+SignalK Path: (auto-extracted)
+Source Label: ais-filtered
+Payload Format: full
+Exclude MMSI: 123456789, 987654321
 ```
 
 ## Troubleshooting
