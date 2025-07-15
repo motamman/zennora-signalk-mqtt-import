@@ -1,6 +1,6 @@
 # Zennora SignalK MQTT Import Manager
 
-**Version 0.1.0**
+**Version 0.5.0-alpha.1**
 
 A comprehensive SignalK plugin that provides a web-based interface for managing selective import of SignalK data from MQTT brokers. This plugin serves as the inverse of the MQTT Export plugin, allowing you to import data from MQTT topics back into SignalK.
 
@@ -19,20 +19,7 @@ A comprehensive SignalK plugin that provides a web-based interface for managing 
 
 ## Installation
 
-### Method 1: Manual Installation
-```bash
-# Copy to SignalK plugins directory
-cp -r zennora-signalk-mqtt-import ~/.signalk/node_modules/
-
-# Install dependencies
-cd ~/.signalk/node_modules/zennora-signalk-mqtt-import
-npm install
-
-# Restart SignalK
-sudo systemctl restart signalk
-```
-
-### Method 2: NPM Installation from GitHub repo
+### Method: NPM Installation from GitHub repo
 ```bash
 cd ~/.signalk/node_modules
 npm install motamman/zennora-signalk-mqtt-import
@@ -89,11 +76,49 @@ Access the management interface at:
 When SignalK Context or Path are left empty, they are automatically extracted from the MQTT topic:
 
 Examples:
-- Topic: `vessels/self/navigation/position` → Context: `vessels.self`, Path: `navigation.position`
+- Topic: `vessels/urn_mrn_imo_mmsi_368396230/navigation/position` → Context: `vessels.self` (if 368396230 is self vessel), Path: `navigation.position`
 - Topic: `vessels/urn_mrn_imo_mmsi_123456789/electrical/batteries/house/voltage` → Context: `vessels.urn:mrn:imo:mmsi:123456789`, Path: `electrical.batteries.house.voltage`
+
+### Smart Self Vessel Detection
+The plugin automatically detects when MQTT topics reference the self vessel:
+
+- **Self Vessel URN**: Plugin retrieves the self vessel's URN from SignalK server at startup
+- **Auto-mapping**: Topics like `vessels/urn_mrn_imo_mmsi_368396230/...` are automatically mapped to `vessels.self` context if the MMSI matches the self vessel
+- **External Vessels**: Other vessel URNs are properly converted to standard SignalK format (`vessels.urn:mrn:imo:mmsi:123456789`)
 
 ### Custom Topic Prefix
 If you configure a topic prefix in the plugin settings, it will be automatically added to all subscribed topics and removed when processing messages.
+
+## Self Vessel Detection
+
+The plugin automatically handles the mapping between MQTT topics using actual vessel URNs and SignalK's internal `vessels.self` context.
+
+### How It Works
+
+1. **URN Detection**: At startup, the plugin retrieves the self vessel's URN from the SignalK server
+2. **MQTT Format Conversion**: Converts between MQTT format (`urn_mrn_imo_mmsi_368396230`) and SignalK format (`urn:mrn:imo:mmsi:368396230`)
+3. **Smart Context Mapping**: 
+   - If topic URN matches self vessel → context becomes `vessels.self`
+   - If topic URN is different → context becomes `vessels.urn:mrn:imo:mmsi:123456789`
+
+### Example Scenarios
+
+**Self Vessel Data:**
+- MQTT Topic: `vessels/urn_mrn_imo_mmsi_368396230/navigation/position`
+- Self Vessel MMSI: `368396230`
+- Result: Context = `vessels.self`, Path = `navigation.position`
+
+**External Vessel Data:**
+- MQTT Topic: `vessels/urn_mrn_imo_mmsi_123456789/navigation/position`
+- Self Vessel MMSI: `368396230`
+- Result: Context = `vessels.urn:mrn:imo:mmsi:123456789`, Path = `navigation.position`
+
+### Benefits
+
+- **Automatic**: No manual configuration required
+- **Flexible**: Handles both self and external vessel data
+- **Standards Compliant**: Proper SignalK context mapping
+- **AIS Integration**: Seamless handling of AIS data from multiple vessels
 
 ## Payload Formats
 
@@ -139,11 +164,11 @@ Or simple values:
 
 The plugin comes with practical rules for common marine data import:
 
-1. **All Navigation Data** - `vessels/self/navigation/+`
-2. **AIS Vessels** - `vessels/urn_mrn_imo_mmsi_+/+`
-3. **Electrical Batteries** - `vessels/self/electrical/batteries/+`
-4. **Propulsion Data** - `vessels/self/propulsion/+`
-5. **Environment Data** - `vessels/self/environment/+`
+1. **Self Navigation Data** - `vessels/urn_mrn_imo_mmsi_+/navigation/+` (auto-detects self vessel)
+2. **Self Electrical Data** - `vessels/urn_mrn_imo_mmsi_+/electrical/+` (auto-detects self vessel)
+3. **Self Propulsion Data** - `vessels/urn_mrn_imo_mmsi_+/propulsion/+` (auto-detects self vessel)
+4. **Self Environment Data** - `vessels/urn_mrn_imo_mmsi_+/environment/+` (auto-detects self vessel)
+5. **AIS Vessels (All)** - `vessels/urn_mrn_imo_mmsi_+/+` (disabled by default)
 
 ## Integration with Export Plugin
 
@@ -160,21 +185,21 @@ This allows you to:
 
 ## Usage Examples
 
-### Example 1: Import Navigation Data
+### Example 1: Import Self Vessel Navigation Data
 ```
-Rule Name: Navigation Import
-MQTT Topic: vessels/self/navigation/+
-SignalK Context: vessels.self
+Rule Name: Self Navigation Import
+MQTT Topic: vessels/urn_mrn_imo_mmsi_+/navigation/+
+SignalK Context: (auto-detected as vessels.self if MMSI matches)
 SignalK Path: (auto-extracted)
 Source Label: mqtt-import
 Payload Format: full
 ```
 
-### Example 2: Import AIS Data
+### Example 2: Import AIS Data from Other Vessels
 ```
 Rule Name: AIS Import
 MQTT Topic: vessels/urn_mrn_imo_mmsi_+/+
-SignalK Context: (auto-extracted)
+SignalK Context: (auto-extracted as vessels.urn:mrn:imo:mmsi:123456789)
 SignalK Path: (auto-extracted)
 Source Label: ais-mqtt
 Payload Format: full
@@ -202,6 +227,7 @@ Payload Format: value-only
 2. **No Data Appearing in SignalK**
    - Check if import rules are enabled
    - Verify MQTT topic patterns match published topics
+   - Ensure self vessel MMSI is correctly detected in plugin logs
    - Review SignalK debug logs
 
 3. **Duplicate Data**
