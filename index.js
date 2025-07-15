@@ -230,7 +230,7 @@ module.exports = function(app) {
         if (matches && isMMSIExcluded(topic, r)) {
           const mmsi = extractMMSIFromUrn(topic.split('/')[1]);
           app.debug(`🔍 Rule "${r.name}" matches but MMSI ${mmsi} is excluded - continuing search`);
-          return false; // Continue looking for other rules
+          continue; // Continue looking for other rules
         }
         
         // If this rule matches and doesn't exclude, use it
