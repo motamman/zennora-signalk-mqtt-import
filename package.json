@@ -3,7 +3,7 @@
   "version": "0.5.0-alpha.1",
   "description": "SignalK plugin to selectively import data from MQTT with webapp management interface",
   "main": "index.js",
-  "icon": "public/zennora.jpg",
+  "icon": "public/mqtt_import.png",
   "keywords": [
     "signalk-node-server-plugin",
     "signalk-webapp",
@@ -26,6 +26,6 @@
     "appSupport": "webapp",
     "compatibility": ">=2.13.0",
     "displayName": "Zennora MQTT Import Manager",
-    "appIcon": "zennora.jpg"
+    "appIcon": "mqtt_import.png"
   }
 }
