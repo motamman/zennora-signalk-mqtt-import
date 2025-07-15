@@ -143,6 +143,7 @@ module.exports = function(app) {
     });
 
     // Subscribe to all topics
+    app.debug(`📡 Subscribing to ${topics.size} MQTT topics...`);
     topics.forEach(topic => {
       mqttClient.subscribe(topic, { qos: 1 }, (err) => {
         if (err) {
@@ -161,6 +162,9 @@ module.exports = function(app) {
     try {
       const messageStr = message.toString();
       
+      // Debug: Log incoming message
+      app.debug(`📥 Received MQTT message on topic: ${topic}`);
+      
       // Find matching import rule
       const rule = importRules.find(r => {
         if (!r.enabled) return false;
@@ -169,6 +173,9 @@ module.exports = function(app) {
         if (plugin.config.topicPrefix) {
           expectedTopic = `${plugin.config.topicPrefix}/${expectedTopic}`;
         }
+        
+        // Debug: Log rule matching attempt
+        app.debug(`🔍 Checking rule "${r.name}" with pattern: ${expectedTopic}`);
         
         // Support wildcard matching with URN format flexibility
         if (expectedTopic.includes('#')) {
@@ -179,8 +186,10 @@ module.exports = function(app) {
             const urnPrefix = prefix.replace('vessels/self/', `vessels/${selfVesselUrn}/`);
             const underscoreUrn = urnToMqttFormat(selfVesselUrn);
             const underscorePrefix = underscoreUrn ? prefix.replace('vessels/self/', `vessels/${underscoreUrn}/`) : null;
-            return topic.startsWith(prefix) || topic.startsWith(urnPrefix) || 
-                   (underscorePrefix && topic.startsWith(underscorePrefix));
+            const matches = topic.startsWith(prefix) || topic.startsWith(urnPrefix) || 
+                           (underscorePrefix && topic.startsWith(underscorePrefix));
+            app.debug(`🔍 vessels/self matching: ${matches} (tried: ${prefix}, ${urnPrefix}, ${underscorePrefix})`);
+            return matches;
           }
           
           return topic.startsWith(prefix) || topic.startsWith(prefix.replace(/_/g, ':'));
@@ -216,9 +225,11 @@ module.exports = function(app) {
       });
 
       if (!rule) {
-        app.debug(`No import rule found for topic: ${topic}`);
+        app.debug(`❌ No import rule found for topic: ${topic}`);
         return;
       }
+      
+      app.debug(`✅ Rule matched: "${rule.name}" for topic: ${topic}`);
 
       // Check if MMSI should be excluded
       if (isMMSIExcluded(topic, rule)) {
@@ -253,6 +264,9 @@ module.exports = function(app) {
 
       if (signalKData) {
         sendToSignalK(signalKData, rule);
+        app.debug(`📤 Successfully processed message for topic: ${topic}`);
+      } else {
+        app.debug(`⚠️ Failed to parse message for topic: ${topic}`);
       }
 
     } catch (error) {
